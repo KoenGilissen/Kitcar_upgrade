@@ -1,6 +1,8 @@
 #include <project.h>
 #include <stdio.h>
 #include <math.h>
+#include <string.h>
+#define ARM_MATH_ROUNDING
 
 #define __DEBUG
 #define TRUE 1
@@ -10,21 +12,23 @@
 #define DUTYCYCLEPOS 0.002 //2ms
 #define FCLK 100000 // 100 kHz
 #define IDLETOLERANCE 6 // idle tolerance %
+#define TROTTLECOUNTSIDLE 623
+#define TFACTOR 6.235
+
 volatile uint8 __SIGNAL_LOST = TRUE;
+
 
 CY_ISR( ch1Int );
 CY_ISR( risingEdgeInt );
 uint8 getSignalLostFlag(void);
 void SteeringWheelDriver(uint32_t ch1Value );
-uint32 rescaleCh1Value(uint32_t ch1Value);
+uint32_t trottleResponse(uint32_t channel2);
 
 
 int main(void)
 {
     #ifdef __DEBUG
-        char pulseWidth_CH1[10] = "";
-        char pulseWidth_CH2[10] = "";
-        char ch1RescaledVal[10] = "";
+        char uartMessage[20] = "";
     #endif
     uint32_t pulseWidthCh1 = 0;
     uint32_t pulseWidthCh2 = 0;
@@ -39,8 +43,11 @@ int main(void)
     
     TimerCh1_Start();
     TimerCh2_Start();
-    PWM_STEERING_Start();
-    
+    PinOutDrv8871IN1_Write(0);
+    PinOutDrv8871IN2_Write(0);
+    PWMTrottle_WriteCompare1(TROTTLECOUNTSIDLE);
+    PWMTrottle_WriteCompare1(TROTTLECOUNTSIDLE);
+    PWMTrottle_Start();
     isrCh1_StartEx( ch1Int );
     isrRisingEdge_StartEx( risingEdgeInt );
 
@@ -52,26 +59,32 @@ int main(void)
         if(getSignalLostFlag()) //KILL ALL
         {
             PinLed_Write(1);
-            PWM_STEERING_Stop();
+            PinOutDrv8871IN1_Write(0);
+            PinOutDrv8871IN2_Write(0);   
+            PWMTrottle_Stop();
+            PWMTrottle_WriteCompare1(TROTTLECOUNTSIDLE);
+            PWMTrottle_WriteCompare2(TROTTLECOUNTSIDLE);
         }
-        else
+        else //DO Stuff
         {
             PinLed_Write(0);
-            PWM_STEERING_Start();
+            pulseWidthCh1 = TimerCh1_ReadCapture();
+            pulseWidthCh2 = TimerCh2_ReadCapture();
+            SteeringWheelDriver( pulseWidthCh1 );
+            PWMTrottle_Start();
+            PWMTrottle_WriteCompare1(trottleResponse(pulseWidthCh2));
+            PWMTrottle_WriteCompare2(trottleResponse(pulseWidthCh2));
         }
-        pulseWidthCh1 = TimerCh1_ReadCapture();
-        pulseWidthCh2 = TimerCh2_ReadCapture();
-        SteeringWheelDriver( pulseWidthCh1 );
+
        
         #ifdef __DEBUG
-            sprintf(pulseWidth_CH1, "%lu", (unsigned long) pulseWidthCh1);
-            sprintf(pulseWidth_CH2, "%lu", (unsigned long) pulseWidthCh2); 
-            sprintf(ch1RescaledVal, "%lu", (unsigned long) rescaleCh1Value(pulseWidthCh1)); 
-            UART_1_UartPutString(pulseWidth_CH1); 
+            sprintf(uartMessage, "%lu", (unsigned long) pulseWidthCh1);
+            UART_1_UartPutString(uartMessage); 
+            strcpy(uartMessage, "");
             UART_1_UartPutString("\t");
-            UART_1_UartPutString(pulseWidth_CH2); 
-            UART_1_UartPutString("\t");
-            UART_1_UartPutString(ch1RescaledVal); 
+            sprintf(uartMessage, "%lu", (unsigned long) trottleResponse(pulseWidthCh2)); 
+            UART_1_UartPutString(uartMessage);
+            strcpy(uartMessage, "");
             UART_1_UartPutString("\r\n");
         #endif
           
@@ -83,6 +96,8 @@ int main(void)
 CY_ISR( ch1Int )
 {
     __SIGNAL_LOST = TRUE;
+    PinOutDrv8871IN1_Write(0);
+    PinOutDrv8871IN2_Write(0); 
     TimerCh1_ClearInterrupt(TimerCh1_INTR_MASK_TC);
 }
 
@@ -102,30 +117,54 @@ uint8 getSignalLostFlag()
 
 void SteeringWheelDriver(uint32_t ch1Value )
 {
-    double idleTol =  (DUTYCYCLEIDLE*FCLK)+((IDLETOLERANCE/100)*(DUTYCYCLEIDLE*FCLK));
+    double idleTol =  (IDLETOLERANCE)*(DUTYCYCLEIDLE*FCLK)/100;
     if(ch1Value >= (DUTYCYCLEIDLE*FCLK-idleTol) && ch1Value <= (DUTYCYCLEIDLE*FCLK+idleTol)) //DEAD ZONE --> No drive
     {
-        PWM_STEERING_WriteCompare1(0);
-        PWM_STEERING_WriteCompare2(0);        
+        PinOutDrv8871IN1_Write(0);
+        PinOutDrv8871IN2_Write(0);       
     }
     else if( ch1Value > (DUTYCYCLEIDLE*FCLK+idleTol))
     {
-        PWM_STEERING_WriteCompare1(0); //IN1 = 0
-        PWM_STEERING_WriteCompare2(rescaleCh1Value(ch1Value)); //IN2 = x
+        PinOutDrv8871IN1_Write(0);
+        PinOutDrv8871IN2_Write(1);   
     }
     else
     {
-        PWM_STEERING_WriteCompare1(rescaleCh1Value(ch1Value)); //IN1 = x
-        PWM_STEERING_WriteCompare2(0); //IN2 = 0
+        PinOutDrv8871IN1_Write(1);
+        PinOutDrv8871IN2_Write(0);   
     }
 }
 
-uint32 rescaleCh1Value(uint32_t ch1Value)
+uint32_t trottleResponse(uint32_t channel2)
 {
-    double rescaledValue = 0;
-    uint32_t pwmPeriod = PWM_STEERING_ReadPeriod();
-    double chValueIdle = DUTYCYCLEIDLE*FCLK;
-    double chValuePos = DUTYCYCLEPOS*FCLK;
-    rescaledValue = ((fabs(ch1Value-chValueIdle))/(chValuePos-chValueIdle))*(double)pwmPeriod; 
-    return (uint32_t) rescaledValue;
+    double trottleValue = 0.0;
+    if(channel2 > 147 && channel2 < 153) //IDLE ]147, 153[
+    {
+        trottleValue = 934.5;
+    }
+    else if(channel2 > 190 || channel2 < 110) //MAX ]190[ ]110[
+    {
+        trottleValue = channel2*TFACTOR;
+    }
+    else if( channel2 >= 110 && channel2 <= 129) // [110, 129]
+    {
+        trottleValue = ((channel2)*0.015789-0.63684)*623.5;
+    }
+    else if( channel2 >= 130 && channel2 <= 147) // [130, 147]
+    {
+        trottleValue = ((channel2)*0.003529+0.941176)*623.5;
+    }
+    else if( channel2 >= 153 && channel2 <= 170) // [153, 170]
+    {
+        trottleValue = ((channel2)*0.004029+0.9153)*623.5;
+    }
+    else if( channel2 >= 171 && channel2 <= 190) // [171, 190]
+    {
+        trottleValue = ((channel2)*0.015789-1.1)*623.5;
+    }
+    else
+    {
+        trottleValue = 934.5; //back up
+    }
+    return (uint32_t) trottleValue;
 }

@@ -12,8 +12,10 @@
   <Data key="DataVersionKey" value="2" />
   <Group key="DWRInstGuidMapping">
     <Group key="Pin">
+      <Data key="2d65869a-7168-474c-9b03-3646cf4d17ea" value="PinEscL" />
       <Data key="3b79d1e0-e222-470b-b01f-6509d9e61fec" value="PWM_1_Out" />
       <Data key="4c15b41e-e284-4978-99e7-5aaee19bd0ce" value="Wakeup_Pin" />
+      <Data key="4d669b44-b36a-4ca1-a540-b2d04df838ad" value="PinEscR" />
       <Data key="5e50ce40-00d8-4c8e-840b-117603f9e8f2/73b612cd-240c-4d8e-8340-ea28aabf4b11" value="CapSense_Sns" />
       <Data key="5e50ce40-00d8-4c8e-840b-117603f9e8f2/899719c0-e797-4403-a44f-07a66de2cbeb" value="CapSense_Cmod" />
       <Data key="8d318d8b-cf7b-4b6b-b02c-ab1c5c49d0ba" value="PinCh1" />
@@ -3593,6 +3595,16 @@
     </Group>
   </Group>
   <Group key="Pin2">
+    <Group key="2d65869a-7168-474c-9b03-3646cf4d17ea">
+      <Group key="0">
+        <Data key="Port Format" value="2,2" />
+      </Group>
+    </Group>
+    <Group key="4d669b44-b36a-4ca1-a540-b2d04df838ad">
+      <Group key="0">
+        <Data key="Port Format" value="2,3" />
+      </Group>
+    </Group>
     <Group key="8d318d8b-cf7b-4b6b-b02c-ab1c5c49d0ba">
       <Group key="0">
         <Data key="Port Format" value="0,0" />
